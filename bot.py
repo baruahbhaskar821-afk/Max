@@ -1,35 +1,37 @@
 #!/usr/bin/env python3
 """
-MAX BOT - Complete Working Version for Render.com
-No errors, fully tested
+MAX BOT - Google Gemini AI Version
+Free, Fast, and Reliable!
 """
 
 import json
 import time
 import re
 import os
+import random
 from datetime import datetime
 from threading import Thread
 from flask import Flask, request
 import requests
+import google.generativeai as genai
 
 # ========== CONFIGURATION ==========
-# Ye values Render.com pe Environment Variables mein daal dena
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "YAHAN_APNA_TOKEN_DALO")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "YAHAN_APNI_GROQ_API_KEY_DALO")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YAHAN_APNI_GEMINI_KEY_DALO")
 BOT_NAME = "Max"
 
-# ========== GLOBAL VARIABLES ==========
-conversations = {}
-BOT_USERNAME = None
+# ========== INITIALIZE GEMINI ==========
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')  # Fast and free model
+
+# ========== FLASK APP ==========
 flask_app = Flask('')
 
-# ========== FLASK WEBHOOK ==========
 @flask_app.route('/')
 def home():
-    return f"🤖 {BOT_NAME} Bot is Running! ✅"
+    return "🤖 Max Bot with Gemini AI is Running! ✅"
 
-@flask_app.route(f'/webhook', methods=['POST'])
+@flask_app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         update = request.get_json()
@@ -42,99 +44,99 @@ def webhook():
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
-    flask_app.run(host='0.0.0.0', port=port)
+    flask_app.run(host='0.0.0.0', port=port, threaded=True)
 
-# ========== TELEGRAM API FUNCTIONS ==========
-def telegram_api_call(method, params=None):
-    if params is None:
-        params = {}
-    
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/{method}"
-    
+# ========== TELEGRAM FUNCTIONS ==========
+def send_message(chat_id, text, parse_mode='Markdown', reply_markup=None):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    params = {'chat_id': chat_id, 'text': text[:4096]}
+    if parse_mode:
+        params['parse_mode'] = parse_mode
+    if reply_markup:
+        params['reply_markup'] = reply_markup
     try:
-        if method in ['sendMessage', 'editMessageText', 'sendChatAction', 'answerCallbackQuery']:
-            response = requests.post(url, json=params, timeout=30)
-        else:
-            response = requests.post(url, json=params, timeout=30)
-        
-        if response.status_code == 200:
-            return response.json()
-        else:
-            print(f"API Error: {response.status_code} - {response.text}")
-            return None
+        response = requests.post(url, json=params, timeout=30)
+        return response.json()
     except Exception as e:
-        print(f"API Exception: {e}")
+        print(f"Send error: {e}")
         return None
 
-def send_message(chat_id, text, parse_mode='Markdown', reply_markup=None):
-    params = {
-        'chat_id': chat_id,
-        'text': text[:4096]  # Telegram limit
-    }
-    if parse_mode:
-        params['parse_mode'] = parse_mode
-    if reply_markup:
-        params['reply_markup'] = reply_markup
-    
-    return telegram_api_call('sendMessage', params)
-
 def edit_message(chat_id, message_id, text, parse_mode='Markdown', reply_markup=None):
-    params = {
-        'chat_id': chat_id,
-        'message_id': message_id,
-        'text': text[:4096]
-    }
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/editMessageText"
+    params = {'chat_id': chat_id, 'message_id': message_id, 'text': text[:4096]}
     if parse_mode:
         params['parse_mode'] = parse_mode
     if reply_markup:
         params['reply_markup'] = reply_markup
-    
-    return telegram_api_call('editMessageText', params)
+    try:
+        requests.post(url, json=params, timeout=30)
+    except Exception as e:
+        print(f"Edit error: {e}")
 
-def answer_callback(callback_id, text=None, alert=False):
-    params = {'callback_query_id': callback_id}
-    if text:
-        params['text'] = text
-        params['show_alert'] = alert
-    return telegram_api_call('answerCallbackQuery', params)
+def answer_callback(callback_id):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery"
+    try:
+        requests.post(url, json={'callback_query_id': callback_id}, timeout=30)
+    except Exception as e:
+        print(f"Callback error: {e}")
 
 def send_typing(chat_id):
-    return telegram_api_call('sendChatAction', {
-        'chat_id': chat_id,
-        'action': 'typing'
-    })
-
-def set_webhook():
-    # Render ka URL tumhe deploy ke baad milega
-    render_url = os.environ.get("RENDER_URL", "")
-    if not render_url:
-        print("⚠️ RENDER_URL not set, using polling mode...")
-        return False
-    
-    webhook_url = f"{render_url}/webhook"
-    
-    # Delete old webhook first
-    telegram_api_call('deleteWebhook')
-    time.sleep(1)
-    
-    # Set new webhook
-    result = telegram_api_call('setWebhook', {'url': webhook_url})
-    
-    if result and result.get('ok'):
-        print(f"✅ Webhook set: {webhook_url}")
-        return True
-    else:
-        print(f"❌ Webhook failed: {result}")
-        return False
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendChatAction"
+    try:
+        requests.post(url, json={'chat_id': chat_id, 'action': 'typing'}, timeout=30)
+    except Exception as e:
+        print(f"Typing error: {e}")
 
 def get_bot_info():
-    global BOT_USERNAME
-    result = telegram_api_call('getMe')
-    if result and result.get('ok'):
-        BOT_USERNAME = result['result'].get('username')
-        print(f"✅ Bot connected: @{BOT_USERNAME}")
-        return True
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getMe"
+    try:
+        response = requests.get(url, timeout=30)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ok'):
+                username = data['result'].get('username')
+                print(f"✅ Bot connected: @{username}")
+                return True
+    except Exception as e:
+        print(f"Get bot info error: {e}")
     return False
+
+# ========== GEMINI AI RESPONSE ==========
+def get_gemini_response(user_message, user_name, chat_history=None):
+    try:
+        # Create prompt in Hinglish
+        prompt = f"""Tu {BOT_NAME} hai, ek friendly aur helpful assistant. User ka naam {user_name} hai.
+
+Rules:
+1. Hinglish mein jawab de (Hindi + English mix)
+2. Short aur simple rakhe
+3. Agar calculation ho toh calculate kar
+4. Agar nahi pata toh seedha bol de "Mujhe nahi pata"
+5. Friendly aur helpful ban
+
+User question: {user_message}
+
+Tera jawab:"""
+        
+        # Get response from Gemini
+        response = model.generate_content(prompt)
+        
+        if response and response.text:
+            return response.text.strip()
+        else:
+            return "⚠️ Kuch gadbad ho gayi. Dobara poocho!"
+            
+    except Exception as e:
+        print(f"Gemini Error: {e}")
+        
+        # Fallback responses if Gemini fails
+        fallback_responses = [
+            f"Sorry {user_name}, thodi der baad try karo! Technical issue hai. 🛠️",
+            f"Yeh lo {user_name}, main thoda busy hoon. Thodi der mein aata hoon! ⏰",
+            f"Arre {user_name}! Thoda ruko, aata hoon. 🤖",
+            f"Kya pooch rahe ho {user_name}? Thoda clear karo! 😅"
+        ]
+        return random.choice(fallback_responses)
 
 # ========== KEYBOARDS ==========
 def get_main_keyboard():
@@ -144,7 +146,7 @@ def get_main_keyboard():
             [{"text": "📚 Help", "callback_data": "menu_help"}],
             [{"text": "ℹ️ About", "callback_data": "menu_about"}],
             [{"text": "🔧 Features", "callback_data": "menu_features"}],
-            [{"text": "❓ Ask Me", "callback_data": "menu_ask"}]
+            [{"text": "📊 Stats", "callback_data": "menu_stats"}]
         ]
     }
 
@@ -160,33 +162,45 @@ def get_features_keyboard():
         "inline_keyboard": [
             [{"text": "🧮 Calculator", "callback_data": "feature_calc"}],
             [{"text": "💻 Coding Help", "callback_data": "feature_code"}],
-            [{"text": "📚 General Knowledge", "callback_data": "feature_gk"}],
+            [{"text": "📚 GK", "callback_data": "feature_gk"}],
             [{"text": "🌐 Translation", "callback_data": "feature_translate"}],
+            [{"text": "✍️ Writing", "callback_data": "feature_write"}],
             [{"text": "🔙 Back", "callback_data": "main_menu"}]
         ]
     }
 
-# ========== RESPONSE TEXT ==========
+# ========== HELP TEXTS ==========
 def get_help_text():
     return f"""
 🤖 *{BOT_NAME} - Help Menu*
 
-*Commands:*
+*📌 Commands:*
 /start - Bot start karo
 /help - Yeh help menu
 
-*Group Mein:*
+*💬 Group Mein:*
 Sirf *{BOT_NAME}* likho aur sawaal poocho
 Example: `Max 2+2 kya hai?`
 
-*Private Mein:*
-Direct message karo ya buttons use karo
+*💬 Private Mein:*
+Direct message karo ya neeche buttons use karo!
 
-*AI Features:*
+*🔧 AI Features (Gemini):*
 • Calculations
 • General knowledge
 • Coding help
 • Translation
+• Writing help
+• Friendly chat
+
+*✨ Examples:*
+• "2+2 kya hai?"
+• "Python mein loop kaise likhen?"
+• "Taj Mahal kisne banaya?"
+• "Good morning ka hindi kya hai?"
+• "Ek joke sunao"
+
+*🎯 Free & Unlimited!*
 """
 
 def get_about_text():
@@ -194,104 +208,80 @@ def get_about_text():
 📖 *About {BOT_NAME}*
 
 🤖 *Name:* {BOT_NAME}
-🧠 *AI:* Llama 3.1 (Groq)
+🧠 *AI Model:* Google Gemini 1.5 Flash
+🎯 *Type:* Smart Assistant
 💬 *Language:* Hinglish
-🆓 *Price:* Free
+🆓 *Price:* Free Forever
 
-*How to use:*
-• Group mein `{BOT_NAME}` likho
-• Private mein buttons use karo
+*Features:*
+• Gemini AI (Latest model)
+• Instant responses
+• 24/7 online
+• Group + Private chat
+
+*Why Gemini?*
+✅ Free to use
+✅ Fast responses
+✅ Accurate answers
+✅ Supports Hindi/English
+
+*Created with:* ❤️
 """
 
 def get_stats_text():
     return f"""
-📊 *Bot Stats*
+📊 *{BOT_NAME} Stats*
 
 ✅ Status: Active
-🤖 Name: {BOT_NAME}
-🧠 AI: Llama 3.1
-💬 Active Chats: {len(conversations)}
-⏰ Status: 24/7
+🤖 Bot Name: {BOT_NAME}
+🧠 AI Model: Gemini 1.5 Flash
+⏰ Uptime: 24/7
+💬 Language: Hinglish
 
-*Working Features:*
-✅ AI Chat
+*Features:*
+✅ AI Chat (Gemini)
 ✅ Calculations
-✅ Buttons Menu
-✅ Group Support
+✅ General Knowledge
+✅ Coding Help
+✅ Translation
+✅ Interactive Menu
+
+*Limits:*
+🆓 Unlimited messages
+🌍 Global access
+📱 Mobile friendly
+
+*Ready to help! 🚀*
 """
 
-# ========== AI RESPONSE ==========
-def get_ai_response(user_message, user_name):
-    # Simple calculations without AI
-    calc_result = handle_calculation(user_message)
-    if calc_result:
-        return calc_result
-    
-    # For AI responses
-    system_prompt = f"""Tu {BOT_NAME} hai, ek friendly assistant. User: {user_name}
-Rules: Hinglish mein jawab de, short aur helpful rahe.
-Agar nahi pata toh seedha bol de.
+def get_features_text():
+    return """
+🔧 *Features of {BOT_NAME}*
 
-User: {user_message}
-Answer:"""
+1️⃣ *🧮 Calculator*
+   • 2+2, 10*5, sqrt(144)
+   • Percentage calculations
 
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": "mixtral-8x7b-32768",
-        "messages": [{"role": "system", "content": system_prompt}],
-        "temperature": 0.7,
-        "max_tokens": 250
-    }
-    
-    try:
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
-        if response.status_code == 200:
-            result = response.json()
-            return result['choices'][0]['message']['content']
-        else:
-            return "❌ AI service busy hai. Thodi der baad try karo!"
-    except Exception as e:
-        print(f"AI Error: {e}")
-        return "⚠️ Technical issue. Baad mein try karo!"
+2️⃣ *💻 Coding Help*
+   • Python, JavaScript, HTML
+   • Code explanations & debugging
 
-def handle_calculation(text):
-    # Handle basic calculations
-    text = text.lower().strip()
-    
-    # Check for math expressions
-    math_pattern = r'(\d+[\+\-\*/]\d+)'
-    match = re.search(math_pattern, text)
-    
-    if match:
-        try:
-            expression = match.group(1)
-            # Safe calculation
-            if '+' in expression:
-                nums = expression.split('+')
-                result = int(nums[0]) + int(nums[1])
-                return f"🧮 *Calculation:* {expression} = {result}"
-            elif '-' in expression:
-                nums = expression.split('-')
-                result = int(nums[0]) - int(nums[1])
-                return f"🧮 *Calculation:* {expression} = {result}"
-            elif '*' in expression:
-                nums = expression.split('*')
-                result = int(nums[0]) * int(nums[1])
-                return f"🧮 *Calculation:* {expression} = {result}"
-            elif '/' in expression:
-                nums = expression.split('/')
-                if int(nums[1]) != 0:
-                    result = int(nums[0]) / int(nums[1])
-                    return f"🧮 *Calculation:* {expression} = {result}"
-        except:
-            pass
-    
-    return None
+3️⃣ *📚 General Knowledge*
+   • History, Science, Geography
+   • Current affairs
+
+4️⃣ *🌐 Translation*
+   • Any language to any language
+   • Hinglish support
+
+5️⃣ *✍️ Writing Help*
+   • Essays, stories, letters
+   • Grammar check
+
+*How to use:*
+Simply type your question!
+Example: "Python kya hai?"
+"""
 
 # ========== CALLBACK HANDLER ==========
 def handle_callback_query(callback_query):
@@ -304,8 +294,8 @@ def handle_callback_query(callback_query):
     answer_callback(callback_id)
     
     if data == 'main_menu':
-        edit_message(chat_id, message_id, 
-                    f"🤖 *{BOT_NAME} - Main Menu*\n\nKya karna chahte ho?",
+        edit_message(chat_id, message_id,
+                    f"🤖 *{BOT_NAME} - Main Menu*\n\nKya karna chahte ho? Neeche se choose karo!",
                     reply_markup=get_main_keyboard())
     
     elif data == 'menu_help':
@@ -314,57 +304,55 @@ def handle_callback_query(callback_query):
     elif data == 'menu_about':
         edit_message(chat_id, message_id, get_about_text(), reply_markup=get_back_button())
     
-    elif data == 'menu_ai':
-        edit_message(chat_id, message_id,
-                    "🤖 *AI Chat Mode*\n\nApna sawaal likho!\nExample: '2+2 kya hai?'\n\nBack button se wapas aao!",
-                    reply_markup=get_back_button())
-    
-    elif data == 'menu_ask':
-        edit_message(chat_id, message_id,
-                    "❓ *Ask Me Anything*\n\nKuch bhi poocho!\n\nExamples:\n• 2+2 kya hai?\n• Python kya hai?\n• Ek joke sunao",
-                    reply_markup=get_back_button())
-    
-    elif data == 'menu_features':
-        edit_message(chat_id, message_id, "🔧 *Features*\n\nChoose an option:",
-                    reply_markup=get_features_keyboard())
-    
     elif data == 'menu_stats':
         edit_message(chat_id, message_id, get_stats_text(), reply_markup=get_back_button())
     
+    elif data == 'menu_features':
+        edit_message(chat_id, message_id, "🔧 *Features Menu*\n\nSelect an option:",
+                    reply_markup=get_features_keyboard())
+    
+    elif data == 'menu_ai':
+        edit_message(chat_id, message_id,
+                    "🤖 *AI Chat Mode (Gemini)*\n\nBas apna sawaal likho! Main jawab dunga.\n\n✨ Examples:\n• 2+2 kya hai?\n• Python kya hai?\n• Ek joke sunao\n• Good morning ka hindi\n\nKuch bhi poocho!",
+                    reply_markup=get_back_button())
+    
+    # Features
     elif data == 'feature_calc':
         edit_message(chat_id, message_id,
-                    "🧮 *Calculator Mode*\n\nExamples:\n• 2+2\n• 10*5\n• 100/2\n\nBas calculation likho!",
+                    "🧮 *Calculator Mode*\n\nExamples:\n• 2+2 = 4\n• 10*5 = 50\n• 100/2 = 50\n• 2^10 = 1024\n\nBas calculation likho! Jaise: '25*4 kya hai?'",
                     reply_markup=get_back_button())
     
     elif data == 'feature_code':
         edit_message(chat_id, message_id,
-                    "💻 *Coding Help*\n\nApna code ya question bhejo!\nExample: 'Python mein loop kaise likhen?'",
+                    "💻 *Coding Help Mode*\n\nExamples:\n• 'Python mein loop kaise likhen?'\n• 'Function kaise banayein?'\n• 'Mujhe ek calculator program chahiye'\n\nApna code ya question bhejo!",
                     reply_markup=get_back_button())
     
     elif data == 'feature_gk':
         edit_message(chat_id, message_id,
-                    "📚 *General Knowledge*\n\nKuch bhi poocho!\nExample: 'Taj Mahal kisne banaya?'",
+                    "📚 *General Knowledge Mode*\n\nExamples:\n• 'Taj Mahal kisne banaya?'\n• 'Moon par kab gaya tha?'\n• 'Computer ka invention kisne kiya?'\n\nKuch bhi poocho!",
                     reply_markup=get_back_button())
     
     elif data == 'feature_translate':
         edit_message(chat_id, message_id,
-                    "🌐 *Translation*\n\nExamples:\n• 'Good morning ka hindi'\n• 'Pyar ko english mein'",
+                    "🌐 *Translation Mode*\n\nExamples:\n• 'Good morning ka hindi kya hai?'\n• 'Bonjour ka matlab kya hai?'\n• 'Pyar ko english mein kya bolte hain?'\n\nJo bhi translate karna hai poocho!",
+                    reply_markup=get_back_button())
+    
+    elif data == 'feature_write':
+        edit_message(chat_id, message_id,
+                    "✍️ *Writing Help Mode*\n\nExamples:\n• 'Mujhe ek story likhni hai'\n• 'Essay on pollution'\n• 'Ek poem sunao'\n• 'Mujhe motivation chahiye'\n\nBatao kya likhna hai?",
                     reply_markup=get_back_button())
 
-# ========== MESSAGE PROCESSOR ==========
+# ========== MESSAGE PROCESSING ==========
 def should_reply(message):
     chat_type = message.get('chat', {}).get('type')
     message_text = message.get('text', '').lower()
     
-    # Private chat mein always reply
     if chat_type == 'private':
         return True
     
-    # Group mein BOT_NAME mention ho toh reply
     if BOT_NAME.lower() in message_text:
         return True
     
-    # Reply to bot
     reply_to = message.get('reply_to_message')
     if reply_to and reply_to.get('from', {}).get('is_bot'):
         return True
@@ -375,7 +363,6 @@ def clean_message(text):
     if not text:
         return None
     # Remove bot name mention
-    text = re.sub(rf'@{BOT_USERNAME}', '', text, flags=re.IGNORECASE) if BOT_USERNAME else text
     text = re.sub(rf'\b{BOT_NAME}\b', '', text, flags=re.IGNORECASE)
     text = text.strip()
     return text if text else None
@@ -393,6 +380,7 @@ def process_update(update):
     
     chat_id = message.get('chat', {}).get('id')
     chat_type = message.get('chat', {}).get('type')
+    user_id = message.get('from', {}).get('id')
     user_name = message.get('from', {}).get('first_name', 'User')
     username = message.get('from', {}).get('username', '')
     message_text = message.get('text', '')
@@ -406,7 +394,7 @@ def process_update(update):
         
         if cmd == '/start':
             send_message(chat_id,
-                        f"👋 Namaste {user_name}! Main {BOT_NAME} hoon.\n\nNeeche buttons use karo! 🔽",
+                        f"👋 Namaste {user_name}! Main {BOT_NAME} hoon with Gemini AI!\n\nNeeche buttons se choose karo! 🔽",
                         reply_markup=get_main_keyboard())
             return
         
@@ -425,43 +413,76 @@ def process_update(update):
     cleaned = clean_message(message_text)
     if not cleaned:
         send_message(chat_id,
-                    f"👋 Haan {user_name}! Main {BOT_NAME} yahan hoon.\n\nSawaal likho!",
+                    f"👋 Haan {user_name}! Main {BOT_NAME} yahan hoon.\n\nNeeche buttons use karo ya sawaal likho! 🔽",
                     reply_markup=get_main_keyboard())
         return
     
     # Show typing indicator
     send_typing(chat_id)
     
-    # Get response
-    response = get_ai_response(cleaned, user_name)
+    # Get AI response from Gemini
+    response = get_gemini_response(cleaned, user_name)
     
     # Format response for groups
     if chat_type != 'private' and username:
-        response = f"🤖 @{username} {response}"
+        response = f"🤖 @{username}\n{response}"
+    elif chat_type != 'private':
+        response = f"🤖 {user_name}\n{response}"
     
-    # Send response
+    # Send response with back button
     send_message(chat_id, response, reply_markup=get_back_button())
     
     # Log
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {user_name}: {cleaned[:50]}...")
+    print(f"Response: {response[:100]}...")
 
-# ========== POLLING MODE (Webhook fail ho toh) ==========
+# ========== SET WEBHOOK ==========
+def set_webhook():
+    render_url = os.environ.get("RENDER_URL", "")
+    if not render_url:
+        print("⚠️ RENDER_URL not set, using polling mode...")
+        return False
+    
+    webhook_url = f"{render_url}/webhook"
+    api_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook"
+    
+    # Delete old webhook first
+    requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook")
+    time.sleep(1)
+    
+    # Set new webhook
+    try:
+        response = requests.post(api_url, json={'url': webhook_url})
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ok'):
+                print(f"✅ Webhook set: {webhook_url}")
+                return True
+    except Exception as e:
+        print(f"Webhook error: {e}")
+    
+    return False
+
+# ========== POLLING MODE (Fallback) ==========
 def polling_mode():
     print("🔄 Starting polling mode...")
     last_update_id = 0
     
     while True:
         try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
             params = {'timeout': 30, 'allowed_updates': ['message', 'callback_query']}
             if last_update_id:
                 params['offset'] = last_update_id + 1
             
-            result = telegram_api_call('getUpdates', params)
+            response = requests.get(url, params=params, timeout=35)
             
-            if result and result.get('ok'):
-                for update in result['result']:
-                    last_update_id = update['update_id']
-                    process_update(update)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('ok'):
+                    for update in data['result']:
+                        last_update_id = update['update_id']
+                        process_update(update)
             
             time.sleep(1)
         except Exception as e:
@@ -470,9 +491,9 @@ def polling_mode():
 
 # ========== MAIN ==========
 def main():
-    print("=" * 50)
-    print(f"🤖 {BOT_NAME} BOT Starting...")
-    print("=" * 50)
+    print("=" * 60)
+    print(f"🤖 {BOT_NAME} BOT with Google Gemini AI")
+    print("=" * 60)
     
     # Check configuration
     if TELEGRAM_TOKEN == "YAHAN_APNA_TOKEN_DALO":
@@ -480,9 +501,10 @@ def main():
         print("✅ Set environment variable: TELEGRAM_TOKEN")
         return
     
-    if GROQ_API_KEY == "YAHAN_APNI_GROQ_API_KEY_DALO":
-        print("⚠️ WARNING: GROQ_API_KEY not set!")
-        print("AI features may not work properly!")
+    if GEMINI_API_KEY == "YAHAN_APNI_GEMINI_KEY_DALO":
+        print("❌ ERROR: GEMINI_API_KEY not set!")
+        print("✅ Get your free API key from: https://makersuite.google.com/app/apikey")
+        return
     
     # Get bot info
     if not get_bot_info():
@@ -493,18 +515,18 @@ def main():
     Thread(target=run_flask, daemon=True).start()
     print(f"✅ Flask server started on port {os.environ.get('PORT', 8080)}")
     
-    # Try webhook first, fallback to polling
+    # Try webhook or fallback to polling
     if not set_webhook():
         print("⚠️ Webhook failed, using polling mode...")
         polling_mode()
     else:
         print("✅ Bot is running with webhook!")
-        print("=" * 50)
-        print("🎯 Bot is LIVE!")
-        print(f"📝 Bot Username: @{BOT_USERNAME}")
-        print("💡 Test: Send /start in private chat")
-        print("💬 Group: Type 'Max hello'")
-        print("=" * 50)
+        print("=" * 60)
+        print(f"🎯 {BOT_NAME} BOT is LIVE!")
+        print(f"🧠 AI Model: Google Gemini 1.5 Flash")
+        print("💬 Test: Send /start in private chat")
+        print("🔧 Features: AI Chat, Calculator, Coding Help, Translation")
+        print("=" * 60)
         
         # Keep main thread alive
         while True:
