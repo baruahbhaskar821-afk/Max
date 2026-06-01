@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-MAX BOT - Full AI Bot with Google Gemini (New SDK)
-Python 3.14 Compatible - No Errors!
+MAX BOT - Full AI Bot with Direct Gemini API Calls
+No external AI libraries needed - Works 100% on Render!
 """
 
 import json
@@ -14,30 +14,17 @@ from threading import Thread
 from flask import Flask, request
 import requests
 
-# ========== NEW GEMINI SDK (Python 3.14 Compatible) ==========
-from google import genai
-from google.genai import types
-
 # ========== CONFIGURATION ==========
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "YAHAN_APNA_TOKEN_DALO")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YAHAN_APNI_GEMINI_KEY_DALO")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 BOT_NAME = "Max"
-
-# Initialize Gemini Client (New SDK)
-if GEMINI_API_KEY and GEMINI_API_KEY != "YAHAN_APNI_GEMINI_KEY_DALO":
-    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-    GEMINI_AVAILABLE = True
-    print("✅ Gemini AI (New SDK) initialized!")
-else:
-    GEMINI_AVAILABLE = False
-    print("⚠️ No Gemini API key - using fallback mode")
 
 # ========== FLASK APP ==========
 flask_app = Flask('')
 
 @flask_app.route('/')
 def home():
-    return "🤖 Max Bot with FULL Gemini AI is Running! ✅"
+    return "🤖 Max Bot with Full AI is Running! ✅"
 
 @flask_app.route('/webhook', methods=['POST'])
 def webhook():
@@ -107,74 +94,165 @@ def get_bot_info():
         print(f"Get bot info error: {e}")
     return False
 
-# ========== FULL AI RESPONSE WITH GEMINI (NEW SDK) ==========
-def get_ai_response(user_message, user_name):
-    """Get response from Gemini AI using new SDK"""
+# ========== DIRECT GEMINI API CALL (No Library!) ==========
+def get_gemini_response(user_message, user_name):
+    """Direct API call to Gemini - works without any library!"""
     
-    if not GEMINI_AVAILABLE:
-        return fallback_response(user_message, user_name)
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "":
+        return get_smart_fallback(user_message, user_name)
     
-    try:
-        # Create prompt
-        prompt = f"""Tu {BOT_NAME} hai, ek friendly aur smart assistant. User ka naam {user_name} hai.
+    # Gemini API URL
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    
+    # Smart prompt in Hinglish
+    prompt = f"""Tu {BOT_NAME} hai, ek friendly aur smart assistant. User ka naam {user_name} hai.
 
 Rules:
 1. Hinglish mein jawab de (Hindi + English mix)
 2. Short aur simple rakhe (max 2-3 lines)
 3. Agar calculation ho toh calculate kar
-4. Agar nahi pata toh seedha bol de "Mujhe nahi pata"
-5. Friendly aur helpful ban
+4. Friendly ban, emojis use kar
+5. Agar nahi pata toh "Mujhe nahi pata" bol de
 
 User question: {user_message}
 
 Answer:"""
+    
+    payload = {
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 250,
+            "topP": 0.9
+        }
+    }
+    
+    try:
+        response = requests.post(url, json=payload, timeout=25)
         
-        # New SDK way - using generate_content
-        response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash-exp",
-            contents=prompt
-        )
-        
-        if response and response.text:
-            return response.text.strip()
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Extract text from response
+            if 'candidates' in data and len(data['candidates']) > 0:
+                text = data['candidates'][0]['content']['parts'][0]['text']
+                return text.strip()
+            else:
+                return "⚠️ Kuch gadbad ho gayi. Dobara poocho!"
         else:
-            return "⚠️ Kuch gadbad ho gayi. Dobara poocho!"
+            print(f"Gemini API Error: {response.status_code}")
+            return get_smart_fallback(user_message, user_name)
             
     except Exception as e:
         print(f"Gemini Error: {e}")
-        return fallback_response(user_message, user_name)
+        return get_smart_fallback(user_message, user_name)
 
-def fallback_response(user_message, user_name):
-    """Fallback when Gemini is unavailable"""
+# ========== SMART FALLBACK (Jab Gemini unavailable ho) ==========
+def get_smart_fallback(user_message, user_name):
+    """Intelligent fallback - works even without API"""
     
     msg = user_message.lower().strip()
     
-    # Simple calculations
+    # 1. Calculations
     calc_result = calculate_math(msg)
     if calc_result:
-        return calc_result
+        return f"🧮 {calc_result}"
     
-    # Simple Q&A
-    qa_pairs = {
-        'hello': f"Namaste {user_name}! 👋 Kaise ho?",
-        'hi': f"Hi {user_name}! 🤗 Kya help chahiye?",
-        'how are you': f"Main theek hoon {user_name}! 😊 Aap batao?",
-        'thanks': f"Welcome {user_name}! 😊",
-        'time': f"Current time: {datetime.now().strftime('%I:%M %p')} ⏰",
-        'date': f"Today: {datetime.now().strftime('%d %B %Y')} 📅",
-        'who are you': f"Main {BOT_NAME} hoon! AI assistant 🤖",
-        'what can you do': f"Calculation, GK, Coding Help, Translation, Chat! 🎯",
-        'joke': "Santa: Banta teri shirt ke kitne button hain?\nBanta: 4!\nSanta: Nahi, 6 hain!\nBanta: Main 4 gin raha hoon, tum extra 2 kahan se la rahe ho? 😂",
+    # 2. Greetings
+    if any(g in msg for g in ['hi', 'hello', 'hey', 'namaste', 'hola']):
+        return f"Namaste {user_name}! 👋 Kaise ho? Main {BOT_NAME} AI hoon!"
+    
+    if 'how are you' in msg:
+        return f"Main theek hoon {user_name}! 😊 Aap batao? Kya help chahiye?"
+    
+    # 3. Thanks
+    if any(t in msg for t in ['thanks', 'thank you', 'dhanyavad', 'shukriya']):
+        return f"Welcome {user_name}! 😊 Main hoon yahan help karne ke liye!"
+    
+    # 4. About bot
+    if 'who are you' in msg or 'kaun ho' in msg:
+        return f"""Main {BOT_NAME} hoon! 🤖
+
+✅ Full AI assistant
+✅ Calculation kar sakta hoon
+✅ Coding mein help
+✅ GK answer
+✅ Translation
+
+Kuch bhi poocho!"""
+    
+    # 5. Features
+    if 'what can you do' in msg or 'kya kar sakte ho' in msg:
+        return f"""Main ye sab kar sakta hoon {user_name}:
+
+🧮 Calculator - 2+2, 10*5
+💻 Coding - Python, JavaScript
+📚 GK - History, Science
+🌐 Translation - Any language
+✍️ Writing - Stories, essays
+😂 Jokes - Funny jokes
+
+Try karo: "2+2 kya hai?" 🎯"""
+    
+    # 6. Time & Date
+    if 'time' in msg:
+        return f"⏰ Current time: {datetime.now().strftime('%I:%M %p')}"
+    if 'date' in msg:
+        return f"📅 Today: {datetime.now().strftime('%d %B %Y')}"
+    
+    # 7. Jokes
+    if 'joke' in msg or 'hasao' in msg:
+        jokes = [
+            f"Santa: Banta, teri shadi kab ho rahi?\nBanta: Jab mujhe ladki pasand aa jaye!\nSanta: Tujhe to har ladki pasand aati hai!\nBanta: Isliye shadi nahi ho rahi! 😂",
+            f"Teacher: 2+2 kya hota hai?\nSanta: 5!\nTeacher: Nahi, 4 hota hai!\nSanta: Aapke hisaab se 4, mere hisaab se 5! 🧮",
+            f"Doctor: Aapko problem kya hai?\nPatient: Mujhe bhoolne ki bimari hai!\nDoctor: Kab se?\nPatient: Kya kab se? 😜"
+        ]
+        return random.choice(jokes)
+    
+    # 8. GK
+    gk_pairs = {
+        'taj mahal': 'Taj Mahal Agra mein hai. Shah Jahan ne apni wife Mumtaz ke liye banwaya tha! 🕌',
+        'capital of india': 'India ki capital New Delhi hai! 🇮🇳',
+        'pm of india': 'India ke Prime Minister Narendra Modi ji hain! 🇮🇳',
+        'python': 'Python ek powerful programming language hai. Easy to learn! 🐍',
+        'ai': 'AI (Artificial Intelligence) means machines jo human ki tarah soch sakti hain! 🤖'
     }
     
-    for key, answer in qa_pairs.items():
+    for key, answer in gk_pairs.items():
         if key in msg:
             return answer
     
-    return f"Main samjha nahi {user_name}. Kuch aur poocho! 🧮 Example: '2+2' ya 'Python kya hai?'"
+    # 9. Good morning/night
+    if 'good morning' in msg:
+        return f"Good morning {user_name}! ☀️ Din ki shuruaat mast karo!"
+    if 'good night' in msg:
+        return f"Good night {user_name}! 🌙 Sweet dreams!"
+    
+    # 10. Help
+    if 'help' in msg:
+        return f"""Kya help chahiye {user_name}? 🤔
+
+🔹 Calculation: "2+2"
+🔹 GK: "Taj Mahal"
+🔹 Coding: "Python kya hai"
+🔹 Joke: "Joke sunao"
+🔹 Time: "Time kya hai"
+
+Ya /help command use karo! 📚"""
+    
+    # 11. Default fallback
+    fallbacks = [
+        f"Main samjha nahi {user_name} 🤔 Kuch aur poocho? Jaise '2+2' ya 'Joke sunao'",
+        f"Kya kehna chahte ho {user_name}? 🧮 Calculation likho ya sawaal poocho!",
+        f"Thoda clear karo {user_name}! Example: '2+2', 'Python kya hai', ya 'Joke' 💡"
+    ]
+    return random.choice(fallbacks)
 
 def calculate_math(text):
-    """Calculate math expressions"""
+    """Safe math calculation"""
+    # Basic operations
     patterns = [
         (r'(\d+)\s*\+\s*(\d+)', lambda a, b: a + b),
         (r'(\d+)\s*-\s*(\d+)', lambda a, b: a - b),
@@ -190,9 +268,9 @@ def calculate_math(text):
             result = operation(a, b)
             if result is not None:
                 if isinstance(result, float) and result != int(result):
-                    return f"🧮 = {result:.2f}"
+                    return f"{a} {match.group(0)[len(str(a))]} {b} = {result:.2f}"
                 else:
-                    return f"🧮 = {int(result)}"
+                    return f"{a} {match.group(0)[len(str(a))]} {b} = {int(result)}"
     return None
 
 # ========== KEYBOARDS ==========
@@ -214,121 +292,6 @@ def get_back_button():
         ]
     }
 
-def get_features_keyboard():
-    return {
-        "inline_keyboard": [
-            [{"text": "🧮 Calculator", "callback_data": "feature_calc"}],
-            [{"text": "💻 Coding Help", "callback_data": "feature_code"}],
-            [{"text": "📚 General Knowledge", "callback_data": "feature_gk"}],
-            [{"text": "🌐 Translation", "callback_data": "feature_translate"}],
-            [{"text": "✍️ Writing Help", "callback_data": "feature_write"}],
-            [{"text": "🔙 Back", "callback_data": "main_menu"}]
-        ]
-    }
-
-# ========== HELP TEXTS ==========
-def get_help_text():
-    ai_status = "✅ ACTIVE" if GEMINI_AVAILABLE else "⚠️ FALLBACK MODE"
-    return f"""
-🤖 *{BOT_NAME} - Full AI Bot*
-
-*🧠 AI Status:* {ai_status}
-
-*📌 Commands:*
-/start - Start bot
-/help - This menu
-
-*💬 How to use:*
-• Group mein: `{BOT_NAME} sawaal`
-• Private mein: Direct message
-
-*✨ Examples:*
-• "2+2 kya hai?"
-• "Python mein loop kaise likhen?"
-• "Taj Mahal kisne banaya?"
-• "Good morning ka hindi"
-• "Ek joke sunao"
-• "Mujhe motivation chahiye"
-
-*🎯 AI Features:*
-✅ Smart Conversations
-✅ Calculations
-✅ Coding Help
-✅ General Knowledge
-✅ Translation
-✅ Writing Help
-✅ Jokes & Fun
-"""
-
-def get_about_text():
-    return f"""
-📖 *About {BOT_NAME}*
-
-🤖 *Name:* {BOT_NAME}
-🧠 *AI Model:* Google Gemini 2.0 Flash
-🎯 *Type:* Full AI Assistant
-💬 *Language:* Hinglish
-🆓 *Price:* Free Forever
-
-*Features:*
-• Full AI Conversations
-• Smart Responses
-• 24/7 Online
-• Group + Private Chat
-
-*Status:* 🟢 Active
-"""
-
-def get_stats_text():
-    ai_status = "🟢 Gemini AI Active" if GEMINI_AVAILABLE else "🟡 Fallback Mode"
-    return f"""
-📊 *{BOT_NAME} Stats*
-
-✅ Status: Active
-🤖 Bot Name: {BOT_NAME}
-🧠 AI Model: Gemini 2.0 Flash
-{ai_status}
-
-*Features:*
-✅ Full AI Chat
-✅ Smart Conversations
-✅ Real-time Responses
-
-*Limits:*
-🆓 Unlimited messages
-🌍 Global access
-📱 Mobile friendly
-
-*Ready to help! 🚀*
-"""
-
-def get_features_text():
-    return """
-🔧 *Features of {BOT_NAME}*
-
-1️⃣ *🧮 Calculator*
-   • Math expressions
-   • Percentage calculations
-
-2️⃣ *💻 Coding Help*
-   • Python, JavaScript, HTML
-   • Code explanations
-
-3️⃣ *📚 General Knowledge*
-   • History, Science, Geography
-   • Current affairs
-
-4️⃣ *🌐 Translation*
-   • Any language
-   • Hinglish support
-
-5️⃣ *✍️ Writing Help*
-   • Essays, stories, letters
-   • Grammar check
-
-*Try now!* Type any question! 🚀
-"""
-
 # ========== CALLBACK HANDLER ==========
 def handle_callback_query(callback_query):
     callback_id = callback_query.get('id')
@@ -341,50 +304,82 @@ def handle_callback_query(callback_query):
     
     if data == 'main_menu':
         edit_message(chat_id, message_id,
-                    f"🤖 *{BOT_NAME} - Main Menu*\n\nKya karna chahte ho?",
+                    f"🤖 *{BOT_NAME} - Main Menu*\n\nKya karna chahte ho? Neeche se choose karo!",
                     reply_markup=get_main_keyboard())
     
     elif data == 'menu_help':
-        edit_message(chat_id, message_id, get_help_text(), reply_markup=get_back_button())
+        help_text = f"""
+🤖 *{BOT_NAME} - Full AI Bot Help*
+
+*Commands:*
+/start - Start bot
+/help - Yeh menu
+
+*Examples:*
+• "2+2 kya hai?"
+• "Python kya hai?"
+• "Taj Mahal kisne banaya?"
+• "Ek joke sunao"
+• "Good morning ka hindi"
+• "Time kya hai?"
+
+*Group mein:*
+"{BOT_NAME} sawaal" likho
+
+*AI Features:*
+✅ Smart Chat | ✅ Calculator | ✅ GK | ✅ Coding Help | ✅ Translation
+"""
+        edit_message(chat_id, message_id, help_text, reply_markup=get_back_button())
     
     elif data == 'menu_about':
-        edit_message(chat_id, message_id, get_about_text(), reply_markup=get_back_button())
+        about_text = f"""
+📖 *About {BOT_NAME}*
+
+🤖 *Name:* {BOT_NAME}
+🧠 *AI:* Google Gemini + Smart Fallback
+💬 *Language:* Hinglish
+🆓 *Price:* Free Forever
+
+*Status:* 🟢 Active
+*Type:* Full AI Assistant
+"""
+        edit_message(chat_id, message_id, about_text, reply_markup=get_back_button())
     
     elif data == 'menu_stats':
-        edit_message(chat_id, message_id, get_stats_text(), reply_markup=get_back_button())
+        ai_status = "🟢 Gemini Active" if GEMINI_API_KEY else "🟡 Smart Fallback"
+        stats_text = f"""
+📊 *Bot Stats*
+
+✅ Status: Active
+🤖 Bot: {BOT_NAME}
+🧠 AI Mode: {ai_status}
+
+*Working:* 24/7
+*Messages:* Unlimited
+*Users:* Global
+
+*Features:* ✅ All Working
+"""
+        edit_message(chat_id, message_id, stats_text, reply_markup=get_back_button())
     
     elif data == 'menu_features':
-        edit_message(chat_id, message_id, "🔧 *Features Menu*\n\nSelect an option:",
-                    reply_markup=get_features_keyboard())
+        features_text = """
+🔧 *Features*
+
+1️⃣ 🧮 Calculator - 2+2, 10*5
+2️⃣ 💻 Coding Help - Python, JS
+3️⃣ 📚 GK - Taj Mahal, History
+4️⃣ 🌐 Translation - Any language
+5️⃣ ✍️ Writing - Stories, Essays
+6️⃣ 😂 Jokes - Funny jokes
+
+*Try now!* Kuch bhi poocho! 🚀
+"""
+        edit_message(chat_id, message_id, features_text, reply_markup=get_back_button())
     
     elif data == 'menu_ai':
         edit_message(chat_id, message_id,
                     "🤖 *AI Chat Mode*\n\nBas apna sawaal likho! Main jawab dunga.\n\n✨ Examples:\n• 2+2 kya hai?\n• Python kya hai?\n• Ek joke sunao\n• Good morning ka hindi\n\nKuch bhi poocho!",
-                    reply_markup=get_back_button())
-    
-    elif data == 'feature_calc':
-        edit_message(chat_id, message_id,
-                    "🧮 *Calculator*\n\nExamples:\n• 2+2 = 4\n• 10*5 = 50\n• 100/2 = 50\n\nBas calculation likho!",
-                    reply_markup=get_back_button())
-    
-    elif data == 'feature_code':
-        edit_message(chat_id, message_id,
-                    "💻 *Coding Help*\n\nExamples:\n• 'Python mein loop kaise likhen?'\n• 'Function kaise banayein?'\n\nApna code ya question bhejo!",
-                    reply_markup=get_back_button())
-    
-    elif data == 'feature_gk':
-        edit_message(chat_id, message_id,
-                    "📚 *General Knowledge*\n\nExamples:\n• 'Taj Mahal kisne banaya?'\n• 'Moon par kab gaya tha?'\n\nKuch bhi poocho!",
-                    reply_markup=get_back_button())
-    
-    elif data == 'feature_translate':
-        edit_message(chat_id, message_id,
-                    "🌐 *Translation*\n\nExamples:\n• 'Good morning ka hindi kya hai?'\n\nJo bhi translate karna hai poocho!",
-                    reply_markup=get_back_button())
-    
-    elif data == 'feature_write':
-        edit_message(chat_id, message_id,
-                    "✍️ *Writing Help*\n\nExamples:\n• 'Mujhe ek story likhni hai'\n• 'Essay on pollution'\n\nBatao kya likhna hai?",
                     reply_markup=get_back_button())
 
 # ========== MESSAGE PROCESSING ==========
@@ -434,11 +429,12 @@ def process_update(update):
         cmd = message_text.lower().split()[0]
         if cmd == '/start':
             send_message(chat_id,
-                        f"👋 Namaste {user_name}! Main {BOT_NAME} hoon with FULL Gemini AI!\n\nNeeche buttons use karo! 🔽",
+                        f"👋 Namaste {user_name}! Main {BOT_NAME} hoon - Full AI Bot!\n\nNeeche buttons use karo! 🔽\nYa direct sawaal likho!",
                         reply_markup=get_main_keyboard())
             return
         elif cmd == '/help':
-            send_message(chat_id, get_help_text(), reply_markup=get_back_button())
+            help_text = f"🤖 *{BOT_NAME} Help*\n\nExamples:\n• 2+2\n• Python kya hai\n• Joke sunao\n• Time kya hai\n\nGroup mein: '{BOT_NAME} sawaal'"
+            send_message(chat_id, help_text, reply_markup=get_back_button())
             return
         else:
             return
@@ -459,11 +455,13 @@ def process_update(update):
     send_typing(chat_id)
     
     # Get AI response
-    response = get_ai_response(cleaned, user_name)
+    response = get_gemini_response(cleaned, user_name)
     
     # Format for group
     if chat_type != 'private' and username:
         response = f"🤖 @{username}\n{response}"
+    elif chat_type != 'private':
+        response = f"🤖 {user_name}\n{response}"
     
     # Send response
     send_message(chat_id, response, reply_markup=get_back_button())
@@ -521,11 +519,12 @@ def polling_mode():
 # ========== MAIN ==========
 def main():
     print("=" * 60)
-    print(f"🤖 {BOT_NAME} BOT with FULL Gemini AI (New SDK)")
+    print(f"🤖 {BOT_NAME} BOT - Full AI Version")
     print("=" * 60)
     
     if TELEGRAM_TOKEN == "YAHAN_APNA_TOKEN_DALO":
         print("❌ ERROR: TELEGRAM_TOKEN not set!")
+        print("✅ Add environment variable: TELEGRAM_TOKEN")
         return
     
     if not get_bot_info():
@@ -534,20 +533,20 @@ def main():
     
     # Start Flask
     Thread(target=run_flask, daemon=True).start()
-    print(f"✅ Flask server started")
+    print(f"✅ Flask server started on port {os.environ.get('PORT', 8080)}")
     
     # Start bot
     if not set_webhook():
-        print("⚠️ Using polling mode...")
+        print("⚠️ Webhook failed, using polling mode...")
         polling_mode()
     else:
         print("✅ Bot is running with webhook!")
         print("=" * 60)
-        print(f"🎯 {BOT_NAME} is LIVE with FULL AI!")
-        if GEMINI_AVAILABLE:
-            print("🧠 AI Model: Google Gemini 2.0 Flash")
+        print(f"🎯 {BOT_NAME} is LIVE!")
+        if GEMINI_API_KEY:
+            print("🧠 AI Mode: Google Gemini (Full AI)")
         else:
-            print("⚠️ No API Key - using fallback mode")
+            print("🧠 AI Mode: Smart Fallback (No API Key)")
         print("💬 Send /start in Telegram")
         print("=" * 60)
         
